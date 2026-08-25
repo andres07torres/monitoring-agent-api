@@ -68,11 +68,10 @@ def get_global_logs():
 @router.get("/alerts")
 def get_alerts():
     """
-    Evalúa el estado del hardware en tiempo real y genera alertas 
-    si los recursos superan ciertos umbrales (ej. CPU > 80%).
+    Evalúa el estado del hardware de la máquina virtual Ubuntu 
+    y genera alertas si los recursos superan los umbrales.
     """
     alerts = []
-    # Usamos psutil que ya tienes importado
     cpu_usage = psutil.cpu_percent(interval=0.5)
     ram = psutil.virtual_memory()
     
@@ -80,7 +79,7 @@ def get_alerts():
         alerts.append({"id": "A1", "severity": "HIGH", "message": f"Sobrecarga de CPU detectada: {cpu_usage}%"})
     
     if ram.percent > 90:
-        alerts.append({"id": "A2", "severity": "HIGH", "message": f"Memoria RAM casi agotada: {ram.percent}%"})
+        alerts.append({"id": "A2", "severity": "HIGH", "message": f"Memoria RAM en nivel crítico: {ram.percent}%"})
         
     if not alerts:
         alerts.append({"id": "A0", "severity": "LOW", "message": "Todos los sistemas operan dentro de los parámetros normales. Sin alertas."})
