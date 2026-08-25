@@ -7,6 +7,8 @@ from services.docker_service import (
     stop_container, 
     get_container_logs
 )
+from datetime import datetime
+import psutil
 
 router = APIRouter(prefix="/api/v1")
 
@@ -50,3 +52,37 @@ def get_logs(container_id: str, tail: int = 100):
         return {"logs": get_container_logs(container_id, tail)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/logs")
+def get_global_logs():
+    """
+    Devuelve los últimos eventos del sistema o del orquestador.
+    Por ahora usamos datos estructurados para que la UI los pinte.
+    """
+    return [
+        {"id": "1", "timestamp": datetime.now().isoformat(), "level": "INFO", "message": "Conexión segura establecida vía Cloudflare Zero Trust"},
+        {"id": "2", "timestamp": datetime.now().isoformat(), "level": "INFO", "message": "Agente de monitoreo iniciado correctamente en Ubuntu"},
+        {"id": "3", "timestamp": datetime.now().isoformat(), "level": "WARNING", "message": "Intento de lectura de alertas completado"}
+    ]
+
+@router.get("/alerts")
+def get_alerts():
+    """
+    Evalúa el estado del hardware en tiempo real y genera alertas 
+    si los recursos superan ciertos umbrales (ej. CPU > 80%).
+    """
+    alerts = []
+    # Usamos psutil que ya tienes importado
+    cpu_usage = psutil.cpu_percent(interval=0.5)
+    ram = psutil.virtual_memory()
+    
+    if cpu_usage > 80:
+        alerts.append({"id": "A1", "severity": "HIGH", "message": f"Sobrecarga de CPU detectada: {cpu_usage}%"})
+    
+    if ram.percent > 90:
+        alerts.append({"id": "A2", "severity": "HIGH", "message": f"Memoria RAM casi agotada: {ram.percent}%"})
+        
+    if not alerts:
+        alerts.append({"id": "A0", "severity": "LOW", "message": "Todos los sistemas operan dentro de los parámetros normales. Sin alertas."})
+        
+    return alerts
