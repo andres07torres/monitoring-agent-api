@@ -51,7 +51,8 @@ def get_logs(container_id: str, tail: int = 100):
     try:
         return {"logs": get_container_logs(container_id, tail)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Manejo de errores básico devolviendo un array como espera Android
+        return {"logs": [f"Error al obtener registros: {str(e)}"]}
 
 @router.get("/logs")
 def get_global_logs():

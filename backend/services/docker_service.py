@@ -47,6 +47,7 @@ def get_container_logs(container_id: str, tail: int = 100):
     client = _get_client()
     container = client.containers.get(container_id)
     # .logs returns bytes, decode to string
-    logs = container.logs(tail=tail).decode('utf-8')
-    return logs
-
+    raw_logs = container.logs(tail=tail).decode('utf-8')
+    # EL TRUCO ESTÁ AQUÍ: Cortamos el string gigante en una lista de líneas
+    logs_list = raw_logs.splitlines()
+    return logs_list
