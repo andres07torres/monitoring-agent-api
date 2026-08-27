@@ -1,47 +1,51 @@
-# Monitoring Agent API
+# 🐳 InfraMonitor - Agente Orquestador API
 
-Este es el backend oficial (agente orquestador) diseñado para monitorear y administrar servidores Ubuntu y contenedores Docker desde la aplicación móvil InfraMonitor (Android).
+![Estado](https://img.shields.io/badge/Desarrollo-Activo-success?style=for-the-badge&logo=checkmarx)
+![Python](https://img.shields.io/badge/Python-3.x-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Container-2496ED?style=for-the-badge&logo=docker&logoColor=white)
 
-## Características
-- **Monitoreo en Tiempo Real:** Uso de CPU, RAM, discos y más (a través de `psutil`).
-- **Administración de Docker:** Iniciar, detener, pausar, reiniciar, borrar y limpiar contenedores e imágenes.
-- **Terminal Remota:** Ejecución de comandos de diagnóstico (`ping`, `ls`, etc.) directo desde la app móvil.
-- **Healthchecks:** Verificación de estado HTTP de los diferentes servicios de infraestructura.
+Backend robusto (Agente Orquestador) diseñado para monitorear servidores Ubuntu y administrar contenedores Docker de forma remota y segura. Funciona como el "cerebro" detrás de la aplicación móvil **InfraMonitor (Android)**, traduciendo las peticiones del teléfono en comandos de sistema y métricas en tiempo real.
 
-## Instalación y Despliegue
+## 🚀 Características Principales
 
-1. **Clonar el repositorio:**
-   ```bash
-   git clone https://github.com/andres07torres/monitoring-agent-api.git
-   cd monitoring-agent-api
-   ```
+- **Monitoreo en Tiempo Real**: Telemetría exacta del host leyendo el uso de CPU (núcleos y GHz), RAM y almacenamiento vía `psutil`.
+- **Orquestación de Docker**: Control total de contenedores locales.
+  - Iniciar, detener, pausar, reiniciar y eliminar contenedores.
+  - Limpieza del sistema (Prune) y lectura de Logs en vivo.
+- **Terminal Remota (Diagnóstico)**: Ejecución de comandos del sistema (`ping`, `ls`, etc.) enviados desde el móvil directamente a la terminal de Ubuntu.
+- **Comprobación de Salud (Healthchecks)**: Verificación asíncrona de disponibilidad de URLs y servicios de terceros.
+- **Seguridad (Zero Trust)**: Bloqueo de peticiones no autorizadas mediante interceptores y validación de `X-API-Key` en cada solicitud.
 
-2. **Crear entorno virtual e instalar dependencias:**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
-   ```
+## 🛠️ Stack Tecnológico
 
-3. **Configuración de Seguridad (IMPORTANTE):**
-   Copia el archivo de entorno de ejemplo para crear el tuyo:
-   ```bash
-   cp .env.example .env
-   ```
-   > 🔑 **Durante la instalación, se generará una clave en el archivo `.env` (`API_SECRET_KEY`). Copia esa clave y pégala en la aplicación móvil para autorizar el acceso.**
+- **Lenguaje:** ![Python](https://img.shields.io/badge/-Python-3776AB?style=flat-square&logo=python&logoColor=white) 3.x
+- **Web Framework:** ![FastAPI](https://img.shields.io/badge/-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
+- **Validación de Datos:** ![Pydantic](https://img.shields.io/badge/-Pydantic-E92063?style=flat-square&logo=pydantic&logoColor=white)
+- **Servidor ASGI:** ![Uvicorn](https://img.shields.io/badge/-Uvicorn-499848?style=flat-square&logo=uvicorn&logoColor=white)
+- **Integraciones:** Docker SDK for Python, Psutil, Httpx.
 
-4. **Ejecutar el Servidor:**
-   ```bash
-   cd backend
-   uvicorn main:app --host 0.0.0.0 --port 8001
-   ```
+## 📂 Estructura del Proyecto
 
-## Documentación de la API
-Una vez que el servidor esté corriendo, puedes acceder a la documentación interactiva de los endpoints (Swagger UI) navegando a:
-`http://[TU_IP]:8001/docs`
+```text
+monitoring-agent-api/
+├── backend/
+│   ├── api/             # Controladores y rutas HTTP/WebSocket
+│   ├── schemas/         # DTOs y validación estricta con Pydantic
+│   ├── services/        # Lógica de negocio (Interacción con OS y Docker)
+│   └── main.py          # Punto de entrada de la aplicación
+├── .env.example         # Plantilla de credenciales seguras
+├── .gitignore           # Archivos ignorados por el repositorio
+└── requirements.txt     # Listado de librerías y dependencias
+```
 
-## Tecnologías Utilizadas
-- **FastAPI** (Web Framework asíncrono)
-- **Pydantic** (Validación de esquemas y DTOs)
-- **Docker SDK for Python**
-- **Psutil** (Métricas de hardware)
+## ⚙️ Configuración del Entorno (.env)
+
+El proyecto utiliza variables de entorno para máxima seguridad. Para configurar la comunicación segura entre el servidor y el cliente:
+
+1. Renombra el archivo `.env.example` a `.env` (o crea uno nuevo).
+2. **Durante la instalación, se generará una clave en el archivo `.env` (`API_SECRET_KEY`). Copia esa clave y pégala en la aplicación móvil para autorizar el acceso.**
+3. Ejecuta el servidor (Uvicorn buscará este archivo automáticamente).
+
+---
+Desarrollado con ❤️ para llevar el control de la infraestructura a tu bolsillo.
