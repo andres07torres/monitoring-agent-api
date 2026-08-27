@@ -3,7 +3,7 @@ from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 import httpx
 import subprocess
-from services.system_service import get_system_stats, get_system_history
+from services.system_service import get_system_stats
 from services.docker_service import (
     list_containers, 
     get_container_info, 
@@ -44,11 +44,6 @@ router = APIRouter(prefix="/api/v1", dependencies=[Depends(verify_api_key)])
 def system_stats():
     """Retorna telemetría del servidor en tiempo real (CPU, RAM)."""
     return get_system_stats()
-
-@router.get("/system/history")
-def system_history():
-    """Retorna el historial de telemetría (útil para gráficas de tendencias)."""
-    return get_system_history()
 
 @router.get("/containers")
 def get_containers():
