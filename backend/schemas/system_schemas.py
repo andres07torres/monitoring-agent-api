@@ -13,15 +13,6 @@ class SystemStats(BaseModel):
     disk_used_gb: float
     disk_total_gb: float
 
-class HistoryPoint(BaseModel):
-    timestamp: int
-    cpu_percent: float
-    ram_percent: float
-    
-    class Config:
-        from_attributes = True
-
-
 class HealthCheckResponse(BaseModel):
     status: int
     message: str
