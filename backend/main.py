@@ -4,8 +4,9 @@ from dotenv import load_dotenv
 import uvicorn
 import os
 
-# Cargar variables de entorno desde el archivo .env
-load_dotenv()
+# Cargar variables de entorno desde el archivo .env en la raíz del proyecto (donde está VS Code)
+dotenv_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+load_dotenv(dotenv_path=dotenv_path)
 
 from api.routes import router as http_router
 from api.ws_routes import ws_router
