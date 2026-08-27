@@ -43,6 +43,53 @@ def stop_container(container_id: str):
     container.stop()
     return {"status": "stopped", "id": container_id}
 
+def restart_container(container_id: str):
+    client = _get_client()
+    container = client.containers.get(container_id)
+    container.restart()
+    return {"status": "restarted", "id": container_id}
+
+def pause_container(container_id: str):
+    client = _get_client()
+    container = client.containers.get(container_id)
+    # Check if paused already to avoid error? Not strictly necessary.
+    container.pause()
+    return {"status": "paused", "id": container_id}
+
+def unpause_container(container_id: str):
+    client = _get_client()
+    container = client.containers.get(container_id)
+    container.unpause()
+    return {"status": "unpaused", "id": container_id}
+
+def remove_container(container_id: str):
+    client = _get_client()
+    container = client.containers.get(container_id)
+    container.remove(force=True)
+    return {"status": "removed", "id": container_id}
+
+def get_container_stats(container_id: str):
+    client = _get_client()
+    container = client.containers.get(container_id)
+    stats = container.stats(stream=False)
+    return stats
+
+def prune_system():
+    client = _get_client()
+    containers_pruned = client.containers.prune()
+    images_pruned = client.images.prune()
+    networks_pruned = client.networks.prune()
+    volumes_pruned = client.volumes.prune()
+    return {
+        "status": "pruned",
+        "details": {
+            "containers": containers_pruned,
+            "images": images_pruned,
+            "networks": networks_pruned,
+            "volumes": volumes_pruned
+        }
+    }
+
 def get_container_logs(container_id: str, tail: int = 100):
     client = _get_client()
     container = client.containers.get(container_id)

@@ -1,16 +1,34 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends, Security
+from fastapi.security import APIKeyHeader
 from services.system_service import get_system_stats
 from services.docker_service import (
     list_containers, 
     get_container_info, 
     start_container, 
-    stop_container, 
+    stop_container,
+    restart_container,
+    pause_container,
+    unpause_container,
+    remove_container,
+    get_container_stats,
+    prune_system,
     get_container_logs
 )
 from datetime import datetime
 import psutil
+import os
 
-router = APIRouter(prefix="/api/v1")
+API_KEY_NAME = "X-API-Key"
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
+
+def verify_api_key(api_key_header: str = Security(api_key_header)):
+    # Se recomienda usar variables de entorno, p.ej. os.getenv("API_SECRET_KEY", "super-secret-key")
+    expected_api_key = os.getenv("API_SECRET_KEY", "super-secret-key")
+    if api_key_header != expected_api_key:
+        raise HTTPException(status_code=403, detail="Could not validate API KEY")
+    return api_key_header
+
+router = APIRouter(prefix="/api/v1", dependencies=[Depends(verify_api_key)])
 
 @router.get("/system/stats")
 def system_stats():
@@ -43,6 +61,48 @@ def start_container_route(container_id: str):
 def stop_container_route(container_id: str):
     try:
         return stop_container(container_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/containers/{container_id}/restart")
+def restart_container_route(container_id: str):
+    try:
+        return restart_container(container_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/containers/{container_id}/pause")
+def pause_container_route(container_id: str):
+    try:
+        return pause_container(container_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/containers/{container_id}/unpause")
+def unpause_container_route(container_id: str):
+    try:
+        return unpause_container(container_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/containers/{container_id}")
+def remove_container_route(container_id: str):
+    try:
+        return remove_container(container_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/containers/{container_id}/stats")
+def get_container_stats_route(container_id: str):
+    try:
+        return get_container_stats(container_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/system/prune")
+def prune_system_route():
+    try:
+        return prune_system()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
