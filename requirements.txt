@@ -5,3 +5,4 @@ psutil
 websockets
 python-dotenv
 httpx
+sqlalchemy

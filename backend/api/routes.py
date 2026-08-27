@@ -48,6 +48,19 @@ def system_stats():
     except Exception as e:
         raise HTTPException(status_code=500, detail="Error interno del agente")
 
+from db.database import get_db
+from sqlalchemy.orm import Session
+from schemas.system_schemas import HistoryPoint
+
+@router.get("/system/history", response_model=List[HistoryPoint])
+def system_history(db: Session = Depends(get_db)):
+    """Retorna el historial de telemetría (últimas 24h) desde SQLite."""
+    from services.history_service import get_history
+    try:
+        return get_history(db)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error obteniendo historial de la base de datos")
+
 @router.get("/containers", response_model=List[ContainerBase])
 def get_containers():
     """Retorna la lista de contenedores locales."""

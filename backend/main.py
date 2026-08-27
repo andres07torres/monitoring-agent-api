@@ -9,6 +9,14 @@ load_dotenv()
 
 from api.routes import router as http_router
 from api.ws_routes import ws_router
+from db.database import engine, Base
+from services.history_service import start_history_collector
+
+# Crear tablas en la base de datos
+Base.metadata.create_all(bind=engine)
+
+# Iniciar recolector de historial
+start_history_collector()
 
 app = FastAPI(title="Server Orchestration Agent API", version="1.0.0")
 
