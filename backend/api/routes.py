@@ -22,6 +22,10 @@ API_KEY_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
 
 def verify_api_key(api_key_header: str = Security(api_key_header)):
+    """
+    Middleware de seguridad: Verifica que las peticiones (ej. desde Android vía Retrofit)
+    incluyan el header X-API-Key correcto.
+    """
     # Se recomienda usar variables de entorno, p.ej. os.getenv("API_SECRET_KEY", "super-secret-key")
     expected_api_key = os.getenv("API_SECRET_KEY", "super-secret-key")
     if api_key_header != expected_api_key:
