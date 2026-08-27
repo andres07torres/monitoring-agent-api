@@ -4,3 +4,4 @@ docker
 psutil
 websockets
 python-dotenv
+httpx

@@ -1,5 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends, Security
 from fastapi.security import APIKeyHeader
+from pydantic import BaseModel
+import httpx
+import subprocess
 from services.system_service import get_system_stats, get_system_history
 from services.docker_service import (
     list_containers, 
@@ -17,6 +20,9 @@ from services.docker_service import (
 from datetime import datetime
 import psutil
 import os
+
+class CommandRequest(BaseModel):
+    command: str
 
 API_KEY_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
@@ -155,3 +161,30 @@ def get_alerts():
         alerts.append({"id": "A0", "severity": "LOW", "message": "Todos los sistemas operan dentro de los parámetros normales. Sin alertas."})
         
     return alerts
+
+@router.get("/healthcheck")
+async def healthcheck(url: str):
+    """Verifica si un endpoint HTTP externo responde (200 OK)."""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=5.0)
+            return {"status": response.status_code, "message": "Servicio alcanzable"}
+    except Exception as e:
+        return {"status": 0, "message": f"Inalcanzable: {str(e)}"}
+
+@router.post("/diagnostics/exec")
+def execute_command(request: CommandRequest):
+    """Ejecuta un comando de diagnóstico en el servidor Ubuntu."""
+    try:
+        # Ejecuta el comando y captura la salida
+        result = subprocess.run(
+            request.command, 
+            shell=True, 
+            capture_output=True, 
+            text=True, 
+            timeout=10
+        )
+        output = result.stdout if result.stdout else result.stderr
+        return {"output": output, "exitCode": result.returncode}
+    except Exception as e:
+        return {"output": str(e), "exitCode": 1}
