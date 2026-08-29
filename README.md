@@ -1,6 +1,6 @@
 # 🐳 InfraMonitor - Agente Orquestador API
 
-![Estado](https://img.shields.io/badge/Desarrollo-Activo-success?style=for-the-badge&logo=checkmarx)
+![Estado](https://img.shields.io/badge/Desarrollo-Completado-success?style=for-the-badge&logo=checkmarx)
 ![Python](https://img.shields.io/badge/Python-3.x-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Container-2496ED?style=for-the-badge&logo=docker&logoColor=white)
