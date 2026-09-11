@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  monitoring-agent:
+    build: .
+    container_name: monitoring-agent-api
+    restart: unless-stopped
+    # Permite al contenedor ver los procesos reales del host (necesario para psutil)
+    pid: host
+    # Usa la red del servidor directamente para que funcione en 127.0.0.1:8001
+    network_mode: host
+    env_file:
+      - .env
+    volumes:
+      # Da permisos para controlar el Docker padre
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Da acceso de solo lectura a las métricas reales del disco y CPU
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    environment:
+      - HOST_PROC=/host/proc
+      - HOST_SYS=/host/sys
