@@ -45,14 +45,10 @@ async def websocket_container_logs(websocket: WebSocket, container_id: str):
         while True:
             logs = get_container_logs(container_id, tail=20)
             
-            # get_container_logs devuelve una lista, por lo que debemos convertirla a string 
-            # uniendo las líneas, o enviarla como JSON. send_text requiere un string.
-            if isinstance(logs, list):
-                logs_str = "\n".join(logs)
-            else:
-                logs_str = str(logs)
-                
-            await websocket.send_text(logs_str)
+            # Enviar como JSON con la misma estructura que el endpoint HTTP {"logs": [...]}
+            # Esto evita que el parser de Android (Gson/Moshi) falle y cierre la conexión
+            await websocket.send_json({"logs": logs})
+            
             await asyncio.sleep(3)
     except WebSocketDisconnect:
         print(f"Cliente desconectado de logs del contenedor {container_id}.")
