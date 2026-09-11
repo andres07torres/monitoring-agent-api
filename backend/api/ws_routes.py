@@ -29,7 +29,13 @@ async def websocket_system_stream(websocket: WebSocket):
             # Obtenemos los stats y los enviamos cada 2 segundos
             stats = get_system_stats()
             await websocket.send_json(stats)
-            await asyncio.sleep(2)
+            
+            # Reemplazar sleep() con receive_text(timeout) para mantener el socket activo
+            # Esto permite que el servidor procese los "Pings" que envía Android (OkHttp)
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=2.0)
+            except asyncio.TimeoutError:
+                pass # Timeout normal, volvemos a enviar datos
     except WebSocketDisconnect:
         print("Cliente desconectado del stream de métricas del sistema.")
 
@@ -49,7 +55,10 @@ async def websocket_container_logs(websocket: WebSocket, container_id: str):
             # Esto evita que el parser de Android (Gson/Moshi) falle y cierre la conexión
             await websocket.send_json({"logs": logs})
             
-            await asyncio.sleep(3)
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=3.0)
+            except asyncio.TimeoutError:
+                pass
     except WebSocketDisconnect:
         print(f"Cliente desconectado de logs del contenedor {container_id}.")
     except Exception as e:
