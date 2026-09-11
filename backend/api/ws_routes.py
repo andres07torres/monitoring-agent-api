@@ -10,9 +10,11 @@ ws_router = APIRouter(prefix="/ws/v1")
 
 async def verify_ws_api_key(websocket: WebSocket):
     expected_api_key = os.getenv("API_SECRET_KEY", "super-secret-key")
-    # Intentar leer desde los headers
-    client_key = websocket.headers.get("X-API-Key")
+    # Intentar leer desde los headers o desde los parámetros de la URL (?token=...)
+    client_key = websocket.headers.get("X-API-Key") or websocket.query_params.get("token")
+    
     if client_key != expected_api_key:
+        print(f"WS Auth failed. Received token: {client_key}")
         await websocket.close(code=1008, reason="Unauthorized")
         return False
     return True
