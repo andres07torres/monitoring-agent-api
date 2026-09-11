@@ -18,7 +18,12 @@ def _get_client():
 def list_containers():
     client = _get_client()
     containers = client.containers.list(all=True)
-    return [{"id": c.short_id, "name": c.name, "status": c.status, "image": c.image.tags[0] if c.image.tags else "N/A"} for c in containers]
+    # Excluimos el contenedor de la propia API para que no se monitoree a sí misma
+    return [
+        {"id": c.short_id, "name": c.name, "status": c.status, "image": c.image.tags[0] if c.image.tags else "N/A"} 
+        for c in containers 
+        if c.name != "monitoring-agent-api"
+    ]
 
 def get_container_info(container_id: str):
     client = _get_client()
