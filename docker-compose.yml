@@ -7,8 +7,9 @@ services:
     restart: unless-stopped
     # Permite al contenedor ver los procesos reales del host (necesario para psutil)
     pid: host
-    # Usa la red del servidor directamente para que funcione en 127.0.0.1:8001
-    network_mode: host
+    # Mapeo de puertos para Windows (Expone el 8001 interno al 8000 externo)
+    ports:
+      - "8000:8001"
     env_file:
       - .env
     volumes:
