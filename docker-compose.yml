@@ -9,7 +9,7 @@ services:
     pid: host
     # Mapeo de puertos para Windows (Expone el 8001 interno al 8000 externo)
     ports:
-      - "8000:8001"
+      - "8001:8001"
     env_file:
       - .env
     volumes:
