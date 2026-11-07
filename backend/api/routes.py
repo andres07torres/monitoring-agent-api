@@ -2,11 +2,15 @@ from fastapi import APIRouter, HTTPException, Depends, Security
 from fastapi.security import APIKeyHeader
 import httpx
 import subprocess
-from schemas.system_schemas import SystemStats, HealthCheckResponse, Alert, CommandRequest, CommandResponse
+from schemas.system_schemas import (
+    SystemStats, HealthCheckResponse, Alert, CommandRequest, CommandResponse, PowerActionResponse
+)
 from schemas.docker_schemas import (
     ContainerBase, ContainerInfo, ContainerActionResponse, PruneResponse, LogsResponse
 )
-from services.system_service import get_system_stats
+from services.system_service import (
+    get_system_stats, trigger_shutdown, trigger_reboot
+)
 from services.docker_service import (
     list_containers, 
     get_container_info, 
@@ -47,6 +51,22 @@ def system_stats():
         return get_system_stats()
     except Exception as e:
         raise HTTPException(status_code=500, detail="Error interno del agente")
+
+@router.post("/system/reboot", response_model=PowerActionResponse)
+def reboot_system():
+    """Reinicia el servidor anfitrión de manera segura."""
+    try:
+        return trigger_reboot()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al solicitar reinicio: {str(e)}")
+
+@router.post("/system/shutdown", response_model=PowerActionResponse)
+def shutdown_system():
+    """Apaga el servidor anfitrión de manera segura."""
+    try:
+        return trigger_shutdown()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al solicitar apagado: {str(e)}")
 
 @router.get("/containers", response_model=List[ContainerBase])
 def get_containers():

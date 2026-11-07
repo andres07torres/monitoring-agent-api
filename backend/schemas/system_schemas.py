@@ -28,3 +28,7 @@ class CommandRequest(BaseModel):
 class CommandResponse(BaseModel):
     output: str
     exitCode: int
+
+class PowerActionResponse(BaseModel):
+    success: bool
+    message: str

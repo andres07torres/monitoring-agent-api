@@ -10,6 +10,7 @@ Backend robusto (Agente Orquestador) diseñado para monitorear servidores Ubuntu
 ## 🚀 Características Principales
 
 - **Monitoreo en Tiempo Real**: Telemetría exacta del host leyendo el uso de CPU (núcleos y GHz), RAM y almacenamiento vía `psutil`.
+- **Gestión de Energía del Host**: Reinicio (`/api/v1/system/reboot`) y apagado seguro (`/api/v1/system/shutdown`) diferidos para permitir el cierre limpio de sockets y servicios.
 - **Orquestación de Docker**: Control total de contenedores locales.
   - Iniciar, detener, pausar, reiniciar y eliminar contenedores.
   - Limpieza del sistema (Prune) y lectura de Logs en vivo.
@@ -36,6 +37,7 @@ monitoring-agent-api/
 │   └── main.py          # Punto de entrada de la aplicación
 ├── .env.example         # Plantilla de credenciales seguras
 ├── .gitignore           # Archivos ignorados por el repositorio
+├── install.sh           # Script de despliegue en Ubuntu con Systemd y sudoers
 └── requirements.txt     # Listado de librerías y dependencias
 ```
 
@@ -44,7 +46,7 @@ monitoring-agent-api/
 El proyecto utiliza variables de entorno para máxima seguridad. Para configurar la comunicación segura entre el servidor y el cliente:
 
 1. Renombra el archivo `.env.example` a `.env` (o crea uno nuevo).
-2. **Durante la instalación, se generará una clave en el archivo `.env` (`API_SECRET_KEY`). Copia esa clave y pégala en la aplicación móvil para autorizar el acceso.**
+2. **Durante la instalación (`bash install.sh`), se generará una clave en el archivo `.env` (`API_SECRET_KEY`). Copia esa clave y pégala en la aplicación móvil para autorizar el acceso.**
 3. Ejecuta el servidor (Uvicorn buscará este archivo automáticamente).
 
 ---

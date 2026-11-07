@@ -38,7 +38,12 @@ if ! groups $CURRENT_USER | grep -q '\bdocker\b'; then
     echo "Considera ejecutar: sudo usermod -aG docker $CURRENT_USER"
 fi
 
-echo "[4/5] Creando servicio de fondo (Systemd)..."
+echo "[4/5] Creando servicio de fondo (Systemd) y permisos de energía..."
+
+# Permisos sudoers para apagar/reiniciar sin contraseña
+SUDOERS_FILE="/etc/sudoers.d/monitoring-agent-power"
+echo "$CURRENT_USER ALL=(ALL) NOPASSWD: /sbin/shutdown, /sbin/reboot, /bin/systemctl" | sudo tee $SUDOERS_FILE > /dev/null
+sudo chmod 0440 $SUDOERS_FILE
 
 sudo tee /etc/systemd/system/monitoring-agent.service > /dev/null <<EOF
 [Unit]
@@ -73,8 +78,3 @@ echo "📱🔑 TU CLAVE SECRETA PARA LA APP MÓVIL ES:"
 echo "-------------------------------------------------"
 echo "$SECRET_KEY"
 echo "-------------------------------------------------"
-echo "Cópiala y pégala en la aplicación para conectar el servidor."
-echo ""
-echo "Para ver los logs en vivo, ejecuta:"
-echo "sudo journalctl -u monitoring-agent -f"
-echo "================================================="
