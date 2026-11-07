@@ -6,6 +6,9 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
+# Instalar util-linux para disponer de nsenter (control del host desde el contenedor)
+RUN apt-get update && apt-get install -y --no-install-recommends util-linux procps && rm -rf /var/lib/apt/lists/*
+
 # Instalar dependencias primero (aprovecha la caché de Docker)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

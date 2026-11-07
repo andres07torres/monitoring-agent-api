@@ -49,18 +49,20 @@ def _delayed_power_action(action: str):
             flag = "/s" if action == "shutdown" else "/r"
             subprocess.run(["shutdown", flag, "/t", "1"], check=False)
         else:
-            # En Linux (Ubuntu / Debian)
-            is_docker = os.path.exists("/.dockerenv")
+            # En Linux (Ubuntu / Debian / Docker)
             cmd_target = "poweroff" if action == "shutdown" else "reboot"
             flag = "-h" if action == "shutdown" else "-r"
             
-            if is_docker:
-                # Si se ejecuta en contenedor con acceso al host
-                cmd = f"nsenter -t 1 -m -u -i -n -p systemctl {cmd_target} || nsenter -t 1 -m -u -i -n -p shutdown {flag} now"
-            else:
-                # Ejecución nativa en el host
-                cmd = f"sudo systemctl {cmd_target} || sudo shutdown {flag} now"
+            # Si corre en Docker con privileged: true y pid: host, nsenter ejecuta en el host real
+            cmd = (
+                f"nsenter -t 1 -m -u -i -n -p /bin/systemctl {cmd_target} 2>/dev/null || "
+                f"nsenter -t 1 -m -u -i -n -p /sbin/shutdown {flag} now 2>/dev/null || "
+                f"nsenter -t 1 -m -u -i -n -p shutdown {flag} now 2>/dev/null || "
+                f"sudo systemctl {cmd_target} 2>/dev/null || "
+                f"sudo shutdown {flag} now"
+            )
             
+            logger.info(f"Ejecutando acción de energía: {action}")
             subprocess.run(cmd, shell=True, check=False)
     except Exception as e:
         logger.error(f"Error al ejecutar la acción de energía '{action}': {e}")

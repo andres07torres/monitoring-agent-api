@@ -5,9 +5,9 @@ services:
     build: .
     container_name: monitoring-agent-api
     restart: unless-stopped
-    # Permite al contenedor ver los procesos reales del host (necesario para psutil)
+    # Permite al contenedor acceder a los namespaces y PID 1 del anfitrión
     pid: host
-    # Mapeo de puertos para Windows (Expone el 8001 interno al 8000 externo)
+    privileged: true
     ports:
       - "8001:8001"
     env_file:
