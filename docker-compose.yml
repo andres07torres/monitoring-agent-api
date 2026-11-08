@@ -13,6 +13,8 @@ services:
     env_file:
       - .env
     volumes:
+      # Sincroniza el archivo .env para que la clave generada persista en el host
+      - ./.env:/app/.env
       # Da permisos para controlar el Docker padre
       - /var/run/docker.sock:/var/run/docker.sock
       # Da acceso de solo lectura a las métricas reales del disco y CPU

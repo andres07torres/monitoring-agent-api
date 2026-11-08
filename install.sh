@@ -21,15 +21,22 @@ python3 -m venv venv
 
 echo "[3/5] Configurando clave secreta (.env)..."
 if [ ! -f .env ]; then
-    # Generar una clave corta (10 caracteres) con letras, números y símbolos
-    SECRET_KEY=$(python3 -c "import secrets, string; print(''.join(secrets.choice(string.ascii_letters + string.digits + '!@#$%^&*') for _ in range(10)))")
-    echo "API_SECRET_KEY=$SECRET_KEY" > .env
-    chmod 600 .env
-    echo "¡Archivo .env creado de forma segura (solo lectura para el dueño)!"
-else
-    echo "El archivo .env ya existe. Se mantendrá la configuración actual."
-    SECRET_KEY=$(grep API_SECRET_KEY .env | cut -d '=' -f2)
+    if [ -f .env.example ]; then
+        cp .env.example .env
+    else
+        echo 'API_SECRET_KEY=""' > .env
+    fi
 fi
+
+# Validar o generar clave secreta aleatoria en .env si está vacía
+SECRET_KEY=$(python3 -c "
+import sys, os
+sys.path.append(os.path.join(os.getcwd(), 'backend'))
+from main import ensure_api_secret_key
+print(ensure_api_secret_key('.env'))
+")
+chmod 600 .env
+echo "¡Archivo .env configurado de forma segura!"
 
 # Validar permisos de Docker
 if ! groups $CURRENT_USER | grep -q '\bdocker\b'; then
