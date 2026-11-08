@@ -15,7 +15,7 @@ Backend robusto (Agente Orquestador) diseñado para monitorear servidores Ubuntu
   - Limpieza del sistema (Prune) y lectura de Logs en vivo.
 - **Terminal Remota (Diagnóstico)**: Ejecución de comandos del sistema (`ping`, `ls`, etc.) enviados desde el móvil directamente a la terminal de Ubuntu.
 - **Comprobación de Salud (Healthchecks)**: Verificación asíncrona de disponibilidad de URLs y servicios de terceros.
-- **Seguridad (Zero Trust)**: Bloqueo de peticiones no autorizadas mediante interceptores y validación de `X-API-Key` en cada solicitud.
+- **Seguridad (Zero Trust y Auto-Key)**: Bloqueo de peticiones no autorizadas mediante interceptores y validación de `X-API-Key`. Si el campo `API_SECRET_KEY=""` se encuentra vacío en `.env`, al iniciar la API con Docker o Bash se genera y escribe automáticamente una contraseña aleatoria dentro de las comillas.
 
 ## 🛠️ Stack Tecnológico
 
@@ -36,6 +36,10 @@ monitoring-agent-api/
 │   └── main.py          # Punto de entrada de la aplicación
 ├── .env.example         # Plantilla de credenciales seguras
 ├── .gitignore           # Archivos ignorados por el repositorio
+├── docker-compose.yml   # Despliegue con Docker y sincronización de .env
+├── Dockerfile           # Imagen Docker para el agente
+├── install.sh           # Script de despliegue en Ubuntu con Systemd y sudoers
+├── run.sh               # Script para ejecutar en terminal con Bash
 └── requirements.txt     # Listado de librerías y dependencias
 ```
 
@@ -43,9 +47,9 @@ monitoring-agent-api/
 
 El proyecto utiliza variables de entorno para máxima seguridad. Para configurar la comunicación segura entre el servidor y el cliente:
 
-1. Renombra el archivo `.env.example` a `.env` (o crea uno nuevo).
-2. **Durante la instalación, se generará una clave en el archivo `.env` (`API_SECRET_KEY`). Copia esa clave y pégala en la aplicación móvil para autorizar el acceso.**
-3. Ejecuta el servidor (Uvicorn buscará este archivo automáticamente).
+1. Crea o renombra el archivo `.env.example` a `.env`.
+2. Si dejas el campo `API_SECRET_KEY=""` vacío, el sistema generará una contraseña criptográficamente segura y la guardará automáticamente dentro de las comillas en el archivo `.env` al arrancar el agente (ya sea con `docker compose up`, `bash run.sh` o `bash install.sh`).
+3. Copia esa clave generada e ingrésala en la aplicación móvil para autorizar el acceso.
 
 ---
 Desarrollado con ❤️ para llevar el control de la infraestructura a tu bolsillo.
