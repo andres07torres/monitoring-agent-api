@@ -1,6 +1,6 @@
 import docker
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -62,6 +62,22 @@ def _get_single_container_stats(container) -> Dict[str, float]:
         logger.debug(f"Error al obtener métricas de contenedor {getattr(container, 'name', '')}: {e}")
         return {"cpu_usage": 0.0, "ram_usage": 0.0}
 
+def _get_container_image_tag(container) -> str:
+    """Extrae el nombre o tag de la imagen de forma segura sin disparar ImageNotFound."""
+    try:
+        # 1. Buscar en los atributos ya presentes en memoria
+        config_image = container.attrs.get("Config", {}).get("Image")
+        if config_image:
+            return config_image
+        # 2. Si c.image existe y tiene tags
+        if hasattr(container, "image") and container.image and hasattr(container.image, "tags") and container.image.tags:
+            return container.image.tags[0]
+        # 3. Fallback al Image ID corto
+        raw_img = container.attrs.get("Image", "")
+        return str(raw_img)[:12] if raw_img else "N/A"
+    except Exception:
+        return "N/A"
+
 def list_containers() -> List[Dict[str, Any]]:
     """
     Retorna la lista de contenedores con sus métricas calculadas.
@@ -69,6 +85,7 @@ def list_containers() -> List[Dict[str, Any]]:
     """
     client = get_docker_client()
     if not client:
+        logger.warning("list_containers: Docker client no disponible.")
         return []
 
     try:
@@ -78,33 +95,58 @@ def list_containers() -> List[Dict[str, Any]]:
         return []
 
     # Excluimos el contenedor del propio agente de monitoreo si aplica
-    containers = [c for c in raw_containers if c.name != "monitoring-agent-api"]
+    containers = [c for c in raw_containers if getattr(c, "name", "") != "monitoring-agent-api"]
 
-    # Calcular estadísticas concurrentemente para los que están en ejecución
+    # Calcular estadísticas concurrentemente para todos los contenedores en ejecución
     stats_map = {}
-    running_containers = [c for c in containers if c.status == "running"]
+    running_containers = [c for c in containers if getattr(c, "status", "") == "running"]
+
     if running_containers:
-        with ThreadPoolExecutor(max_workers=min(len(running_containers), 5)) as executor:
-            future_to_c = {executor.submit(_get_single_container_stats, c): c.short_id for c in running_containers}
-            for future in future_to_c:
-                cid = future_to_c[future]
-                try:
-                    stats_map[cid] = future.result(timeout=2.0)
-                except Exception:
-                    stats_map[cid] = {"cpu_usage": 0.0, "ram_usage": 0.0}
+        max_workers = min(len(running_containers), 15)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_cid = {executor.submit(_get_single_container_stats, c): c.short_id for c in running_containers}
+            try:
+                # Timeout global de 2.5s para no bloquear peticiones móviles
+                for future in as_completed(future_to_cid, timeout=2.5):
+                    cid = future_to_cid[future]
+                    try:
+                        stats_map[cid] = future.result()
+                    except Exception:
+                        stats_map[cid] = {"cpu_usage": 0.0, "ram_usage": 0.0}
+            except Exception:
+                # Si se alcanza el timeout global, los pendientes quedan con 0.0
+                pass
 
     result = []
     for c in containers:
-        c_stats = stats_map.get(c.short_id, {"cpu_usage": 0.0, "ram_usage": 0.0})
-        image_tag = c.image.tags[0] if (c.image and c.image.tags) else "N/A"
-        result.append({
-            "id": c.short_id,
-            "name": c.name,
-            "status": c.status,
-            "cpu_usage": c_stats["cpu_usage"],
-            "ram_usage": c_stats["ram_usage"],
-            "image": image_tag
-        })
+        try:
+            cid = getattr(c, "short_id", getattr(c, "id", "unknown")[:12])
+            c_name = getattr(c, "name", "unknown")
+            c_status = getattr(c, "status", "unknown")
+            c_stats = stats_map.get(cid, {"cpu_usage": 0.0, "ram_usage": 0.0})
+            image_tag = _get_container_image_tag(c)
+
+            result.append({
+                "id": cid,
+                "name": c_name,
+                "status": c_status,
+                "cpu_usage": c_stats["cpu_usage"],
+                "ram_usage": c_stats["ram_usage"],
+                "image": image_tag
+            })
+        except Exception as ex:
+            logger.warning(f"Error parseando contenedor: {ex}")
+            try:
+                result.append({
+                    "id": getattr(c, "short_id", "unknown"),
+                    "name": getattr(c, "name", "unknown"),
+                    "status": getattr(c, "status", "unknown"),
+                    "cpu_usage": 0.0,
+                    "ram_usage": 0.0,
+                    "image": "N/A"
+                })
+            except Exception:
+                pass
 
     return result
 
@@ -114,7 +156,7 @@ def get_container_info(container_id: str) -> Dict[str, Any]:
         raise RuntimeError("Docker Engine no disponible")
     container = client.containers.get(container_id)
     c_stats = _get_single_container_stats(container)
-    image_tag = container.image.tags[0] if (container.image and container.image.tags) else "N/A"
+    image_tag = _get_container_image_tag(container)
     return {
         "id": container.short_id,
         "name": container.name,
