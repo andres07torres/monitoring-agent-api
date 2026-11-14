@@ -223,7 +223,7 @@ def get_alerts():
     except Exception as e:
         logger.warning(f"Error generando alertas: {e}")
         return [{
-            "id": "alt-err-001",
+            "id": "A0",
             "severity": "LOW",
             "message": "Sistema funcionando normalmente",
             "timestamp": "2026-11-13T21:00:00Z"

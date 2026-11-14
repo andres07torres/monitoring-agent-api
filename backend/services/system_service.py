@@ -206,11 +206,15 @@ def get_system_alerts() -> List[Dict[str, Any]]:
 
     if not alerts:
         alerts.append({
-            "id": "alt-ok-001",
+            "id": "A0",
             "severity": "LOW",
             "message": "Todos los sistemas operan dentro de los parámetros normales. Sin alertas.",
             "timestamp": now_iso
         })
+
+    # Asignar identificadores cortos secuenciales (A0, A1, A2, ...)
+    for idx, alert in enumerate(alerts):
+        alert["id"] = f"A{idx}"
 
     return alerts
 
