@@ -13,7 +13,6 @@ def ensure_api_secret_key(dotenv_path: str) -> str:
     Verifica si existe el archivo .env y si API_SECRET_KEY está vacía (ej. API_SECRET_KEY="").
     Si está vacía, genera automáticamente una contraseña segura y la escribe dentro de las comillas en .env.
     """
-    # Si no existe .env, verificar si existe .env.example para copiarlo como plantilla
     if not os.path.exists(dotenv_path):
         example_path = os.path.join(os.path.dirname(dotenv_path), ".env.example")
         if os.path.exists(example_path):
@@ -29,7 +28,6 @@ def ensure_api_secret_key(dotenv_path: str) -> str:
         print(f"[!] No se pudo leer {dotenv_path}: {e}")
         return os.getenv("API_SECRET_KEY", "")
 
-    # Patrón para detectar API_SECRET_KEY="..." o API_SECRET_KEY='' o API_SECRET_KEY=
     pattern = r"^[ \t]*API_SECRET_KEY[ \t]*=[ \t]*(['\"]?)(.*?)\1[ \t]*(?:#.*)?$"
     match = re.search(pattern, content, flags=re.MULTILINE)
 
@@ -42,7 +40,6 @@ def ensure_api_secret_key(dotenv_path: str) -> str:
 
     if match:
         val = match.group(2).strip()
-        # Si está vacío o tiene el placeholder por defecto
         if not val or val == "cambiar_por_una_llave_segura_generada_aleatoriamente":
             secret_key = generate_random_password(16)
             content = re.sub(
@@ -55,7 +52,6 @@ def ensure_api_secret_key(dotenv_path: str) -> str:
         else:
             secret_key = val
     else:
-        # Si no existía la variable en el archivo, se agrega
         secret_key = generate_random_password(16)
         if content and not content.endswith("\n"):
             content += "\n"
@@ -67,8 +63,8 @@ def ensure_api_secret_key(dotenv_path: str) -> str:
             with open(dotenv_path, "w", encoding="utf-8") as f:
                 f.write(content)
             print("=" * 65)
-            print("[SEGURIDAD] API_SECRET_KEY estaba vacia en .env.")
-            print("Se genero automaticamente una nueva contrasena aleatoria:")
+            print("[SEGURIDAD] API_SECRET_KEY estaba vacía en .env.")
+            print("Se generó automáticamente una nueva contraseña aleatoria:")
             print(f"-> {secret_key}")
             print(f"Guardada dentro de las comillas en: {dotenv_path}")
             print("=" * 65)
@@ -86,9 +82,13 @@ ensure_api_secret_key(dotenv_path)
 load_dotenv(dotenv_path=dotenv_path, override=True)
 
 from api.routes import router as http_router
-from api.ws_routes import ws_router
+from api.ws_routes import ws_router, api_ws_router
 
-app = FastAPI(title="Server Orchestration Agent API", version="1.0.0")
+app = FastAPI(
+    title="InfraMonitor Backend Agent API",
+    description="Servidor de telemetría y orquestación para la aplicación móvil InfraMonitor.",
+    version="1.0.0"
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -100,10 +100,15 @@ app.add_middleware(
 
 app.include_router(http_router)
 app.include_router(ws_router)
+app.include_router(api_ws_router)
 
 @app.get("/")
 def read_root():
-    return {"status": "Agent is running", "agent": "FastAPI Orquestador"}
+    return {
+        "status": "online",
+        "agent": "InfraMonitor Backend Agent",
+        "version": "1.0.0"
+    }
 
 if __name__ == "__main__":
     port = int(os.getenv("API_PORT", 8001))

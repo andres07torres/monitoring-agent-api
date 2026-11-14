@@ -1,92 +1,196 @@
 import docker
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-# Inicializar cliente de Docker (se conecta al socket local de Linux)
-try:
-    docker_client = docker.from_env()
-except Exception as e:
-    logger.error(f"Error conectando a Docker: {e}")
-    docker_client = None
+_docker_client: Optional[docker.DockerClient] = None
 
-def _get_client():
-    if not docker_client:
-        raise Exception("Cliente Docker no inicializado")
-    return docker_client
+def get_docker_client() -> Optional[docker.DockerClient]:
+    """
+    Retorna el cliente de Docker si está disponible.
+    Intenta reconectarse si se perdió la conexión. Nunca lanza excepciones no capturadas.
+    """
+    global _docker_client
+    if _docker_client is not None:
+        try:
+            _docker_client.ping()
+            return _docker_client
+        except Exception:
+            _docker_client = None
 
-def list_containers():
-    client = _get_client()
-    containers = client.containers.list(all=True)
-    # Excluimos el contenedor de la propia API para que no se monitoree a sí misma
-    return [
-        {"id": c.short_id, "name": c.name, "status": c.status, "image": c.image.tags[0] if c.image.tags else "N/A"} 
-        for c in containers 
-        if c.name != "monitoring-agent-api"
-    ]
+    try:
+        _docker_client = docker.from_env()
+        _docker_client.ping()
+        return _docker_client
+    except Exception as e:
+        logger.warning(f"No se pudo conectar con Docker Engine (/var/run/docker.sock): {e}")
+        _docker_client = None
+        return None
 
-def get_container_info(container_id: str):
-    client = _get_client()
+def _get_single_container_stats(container) -> Dict[str, float]:
+    """Calcula cpu_usage (%) y ram_usage (MB) para un contenedor de forma segura."""
+    try:
+        if container.status != "running":
+            return {"cpu_usage": 0.0, "ram_usage": 0.0}
+
+        stats = container.stats(stream=False)
+
+        # 1. RAM Usage (MB)
+        memory_stats = stats.get("memory_stats", {})
+        usage_bytes = memory_stats.get("usage", 0)
+        stats_sub = memory_stats.get("stats", {})
+        cache_bytes = stats_sub.get("cache") or stats_sub.get("inactive_file", 0)
+        actual_mem = max(0, usage_bytes - cache_bytes) if (cache_bytes and cache_bytes < usage_bytes) else usage_bytes
+        ram_mb = round(actual_mem / (1024 * 1024), 1)
+
+        # 2. CPU Usage (%)
+        cpu_stats = stats.get("cpu_stats", {})
+        precpu_stats = stats.get("precpu_stats", {})
+
+        cpu_delta = cpu_stats.get("cpu_usage", {}).get("total_usage", 0) - precpu_stats.get("cpu_usage", {}).get("total_usage", 0)
+        system_delta = cpu_stats.get("system_cpu_usage", 0) - precpu_stats.get("system_cpu_usage", 0)
+
+        cpu_percent = 0.0
+        if system_delta > 0 and cpu_delta > 0:
+            online_cpus = cpu_stats.get("online_cpus") or len(cpu_stats.get("cpu_usage", {}).get("percpu_usage", [])) or 1
+            cpu_percent = round((cpu_delta / system_delta) * online_cpus * 100.0, 1)
+
+        return {"cpu_usage": cpu_percent, "ram_usage": ram_mb}
+    except Exception as e:
+        logger.debug(f"Error al obtener métricas de contenedor {getattr(container, 'name', '')}: {e}")
+        return {"cpu_usage": 0.0, "ram_usage": 0.0}
+
+def list_containers() -> List[Dict[str, Any]]:
+    """
+    Retorna la lista de contenedores con sus métricas calculadas.
+    Si Docker no está disponible, retorna una lista vacía en vez de lanzar Error 500.
+    """
+    client = get_docker_client()
+    if not client:
+        return []
+
+    try:
+        raw_containers = client.containers.list(all=True)
+    except Exception as e:
+        logger.error(f"Error al listar contenedores desde Docker SDK: {e}")
+        return []
+
+    # Excluimos el contenedor del propio agente de monitoreo si aplica
+    containers = [c for c in raw_containers if c.name != "monitoring-agent-api"]
+
+    # Calcular estadísticas concurrentemente para los que están en ejecución
+    stats_map = {}
+    running_containers = [c for c in containers if c.status == "running"]
+    if running_containers:
+        with ThreadPoolExecutor(max_workers=min(len(running_containers), 5)) as executor:
+            future_to_c = {executor.submit(_get_single_container_stats, c): c.short_id for c in running_containers}
+            for future in future_to_c:
+                cid = future_to_c[future]
+                try:
+                    stats_map[cid] = future.result(timeout=2.0)
+                except Exception:
+                    stats_map[cid] = {"cpu_usage": 0.0, "ram_usage": 0.0}
+
+    result = []
+    for c in containers:
+        c_stats = stats_map.get(c.short_id, {"cpu_usage": 0.0, "ram_usage": 0.0})
+        image_tag = c.image.tags[0] if (c.image and c.image.tags) else "N/A"
+        result.append({
+            "id": c.short_id,
+            "name": c.name,
+            "status": c.status,
+            "cpu_usage": c_stats["cpu_usage"],
+            "ram_usage": c_stats["ram_usage"],
+            "image": image_tag
+        })
+
+    return result
+
+def get_container_info(container_id: str) -> Dict[str, Any]:
+    client = get_docker_client()
+    if not client:
+        raise RuntimeError("Docker Engine no disponible")
     container = client.containers.get(container_id)
+    c_stats = _get_single_container_stats(container)
+    image_tag = container.image.tags[0] if (container.image and container.image.tags) else "N/A"
     return {
         "id": container.short_id,
         "name": container.name,
         "status": container.status,
-        "image": container.image.tags[0] if container.image.tags else "N/A",
+        "cpu_usage": c_stats["cpu_usage"],
+        "ram_usage": c_stats["ram_usage"],
+        "image": image_tag,
         "created": container.attrs.get("Created")
     }
 
-def start_container(container_id: str):
-    client = _get_client()
+def start_container(container_id: str) -> Dict[str, str]:
+    client = get_docker_client()
+    if not client:
+        raise RuntimeError("Docker Engine no disponible")
     container = client.containers.get(container_id)
     container.start()
-    return {"status": "started", "id": container_id}
+    return {"status": "started", "id": container_id, "message": f"Contenedor {container_id} iniciado"}
 
-def stop_container(container_id: str):
-    client = _get_client()
+def stop_container(container_id: str) -> Dict[str, str]:
+    client = get_docker_client()
+    if not client:
+        raise RuntimeError("Docker Engine no disponible")
     container = client.containers.get(container_id)
     container.stop()
-    return {"status": "stopped", "id": container_id}
+    return {"status": "stopped", "id": container_id, "message": f"Contenedor {container_id} detenido"}
 
-def restart_container(container_id: str):
-    client = _get_client()
+def restart_container(container_id: str) -> Dict[str, str]:
+    client = get_docker_client()
+    if not client:
+        raise RuntimeError("Docker Engine no disponible")
     container = client.containers.get(container_id)
     container.restart()
-    return {"status": "restarted", "id": container_id}
+    return {"status": "restarted", "id": container_id, "message": f"Contenedor {container_id} reiniciado"}
 
-def pause_container(container_id: str):
-    client = _get_client()
+def pause_container(container_id: str) -> Dict[str, str]:
+    client = get_docker_client()
+    if not client:
+        raise RuntimeError("Docker Engine no disponible")
     container = client.containers.get(container_id)
-    # Check if paused already to avoid error? Not strictly necessary.
     container.pause()
-    return {"status": "paused", "id": container_id}
+    return {"status": "paused", "id": container_id, "message": f"Contenedor {container_id} pausado"}
 
-def unpause_container(container_id: str):
-    client = _get_client()
+def unpause_container(container_id: str) -> Dict[str, str]:
+    client = get_docker_client()
+    if not client:
+        raise RuntimeError("Docker Engine no disponible")
     container = client.containers.get(container_id)
     container.unpause()
-    return {"status": "unpaused", "id": container_id}
+    return {"status": "unpaused", "id": container_id, "message": f"Contenedor {container_id} reanudado"}
 
-def remove_container(container_id: str):
-    client = _get_client()
+def remove_container(container_id: str) -> Dict[str, str]:
+    client = get_docker_client()
+    if not client:
+        raise RuntimeError("Docker Engine no disponible")
     container = client.containers.get(container_id)
     container.remove(force=True)
-    return {"status": "removed", "id": container_id}
+    return {"status": "removed", "id": container_id, "message": f"Contenedor {container_id} eliminado"}
 
-def get_container_stats(container_id: str):
-    client = _get_client()
+def get_container_stats(container_id: str) -> Dict[str, Any]:
+    client = get_docker_client()
+    if not client:
+        raise RuntimeError("Docker Engine no disponible")
     container = client.containers.get(container_id)
-    stats = container.stats(stream=False)
-    return stats
+    return container.stats(stream=False)
 
-def prune_system():
-    client = _get_client()
+def prune_system() -> Dict[str, Any]:
+    client = get_docker_client()
+    if not client:
+        raise RuntimeError("Docker Engine no disponible")
     containers_pruned = client.containers.prune()
     images_pruned = client.images.prune()
     networks_pruned = client.networks.prune()
     volumes_pruned = client.volumes.prune()
     return {
         "status": "pruned",
+        "message": "Limpieza de recursos Docker completada con éxito",
         "details": {
             "containers": containers_pruned,
             "images": images_pruned,
@@ -95,11 +199,14 @@ def prune_system():
         }
     }
 
-def get_container_logs(container_id: str, tail: int = 100):
-    client = _get_client()
-    container = client.containers.get(container_id)
-    # .logs returns bytes, decode to string
-    raw_logs = container.logs(tail=tail).decode('utf-8')
-    # EL TRUCO ESTÁ AQUÍ: Cortamos el string gigante en una lista de líneas
-    logs_list = raw_logs.splitlines()
-    return logs_list
+def get_container_logs(container_id: str, tail: int = 100) -> List[str]:
+    client = get_docker_client()
+    if not client:
+        return ["Docker Engine no disponible"]
+    try:
+        container = client.containers.get(container_id)
+        raw_logs = container.logs(tail=tail).decode('utf-8', errors='replace')
+        return raw_logs.splitlines()
+    except Exception as e:
+        logger.warning(f"Error al obtener registros de {container_id}: {e}")
+        return [f"Error al obtener registros: {str(e)}"]

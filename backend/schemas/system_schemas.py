@@ -2,7 +2,6 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
 class SystemStats(BaseModel):
-    timestamp: str
     cpu_percent: float
     cpu_cores: int
     cpu_frequency: float
@@ -12,6 +11,7 @@ class SystemStats(BaseModel):
     disk_percent: float
     disk_used_gb: float
     disk_total_gb: float
+    timestamp: Optional[str] = None
 
 class HealthCheckResponse(BaseModel):
     status: int
@@ -20,6 +20,13 @@ class HealthCheckResponse(BaseModel):
 class Alert(BaseModel):
     id: str
     severity: str
+    message: str
+    timestamp: str
+
+class SystemLog(BaseModel):
+    id: str
+    timestamp: str
+    level: str
     message: str
 
 class CommandRequest(BaseModel):

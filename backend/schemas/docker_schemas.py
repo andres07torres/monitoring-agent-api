@@ -5,7 +5,9 @@ class ContainerBase(BaseModel):
     id: str
     name: str
     status: str
-    image: str
+    cpu_usage: float = 0.0
+    ram_usage: float = 0.0
+    image: Optional[str] = None
 
 class ContainerInfo(ContainerBase):
     created: Optional[str] = None
@@ -13,16 +15,18 @@ class ContainerInfo(ContainerBase):
 class ContainerActionResponse(BaseModel):
     status: str
     id: str
+    message: Optional[str] = None
 
 class PruneDetails(BaseModel):
-    containers: Any
-    images: Any
-    networks: Any
-    volumes: Any
+    containers: Optional[Any] = None
+    images: Optional[Any] = None
+    networks: Optional[Any] = None
+    volumes: Optional[Any] = None
 
 class PruneResponse(BaseModel):
     status: str
-    details: PruneDetails
+    message: Optional[str] = None
+    details: Optional[Any] = None
 
 class LogsResponse(BaseModel):
     logs: List[str]
