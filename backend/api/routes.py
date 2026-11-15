@@ -3,6 +3,7 @@ import httpx
 import subprocess
 import os
 import logging
+import urllib.parse
 from typing import List, Dict, Any, Optional
 
 from schemas.system_schemas import (
@@ -26,7 +27,10 @@ from services.docker_service import (
     get_container_stats,
     prune_system,
     get_container_logs,
-    get_docker_client
+    get_docker_client,
+    find_container,
+    is_non_http_service,
+    get_container_web_target
 )
 
 logger = logging.getLogger(__name__)
@@ -242,46 +246,133 @@ def get_global_logs():
 # 2.4 Diagnóstico y Comprobaciones
 # ==============================================================================
 
-@router.get("/healthcheck", response_model=HealthCheckResponse)
-async def healthcheck(url: Optional[str] = None):
+@router.get("/healthcheck", response_model=HealthCheckResponse, response_model_exclude_none=True)
+async def healthcheck(
+    url: Optional[str] = None,
+    container_id: Optional[str] = None,
+    container_name: Optional[str] = None,
+    container: Optional[str] = None,
+    service_type: Optional[str] = None,
+    type: Optional[str] = None,
+    port: Optional[int] = None,
+):
     """
-    Verifica el estado del servicio local o de un contenedor/endpoint externo si se especifica ?url=...
-    Retorna siempre HTTP 200 a nivel de API administrativa e informa el estado real en el payload JSON.
+    Comprobación de salud (Healthcheck) con diferenciación de tipos de contenedor:
+    1. Bases de datos / Servicios no HTTP (mysql, postgres, redis, mailer, workers):
+       No intenta realizar peticiones HTTP. Consulta el estado de Docker.
+       Si el estado del contenedor es running, responde { "status": 200, "message": "Container is Running" }.
+    2. Servicios Web (APIs / Apps Web):
+       Realiza petición HTTP por red interna o localhost usando HTTP con timeout de 3 a 5 segundos.
+       Si responde OK, responde { "status": 200, "message": "OK" }.
+       Si está caído o no responde al timeout, responde { "status": 503, "message": "Connection refused / Timeout" }.
+    3. Siempre responde con HTTP 200 a nivel de cabecera de la API administrativa.
     """
-    if not url:
-        return {"healthy": True, "status": 200, "message": "OK", "url": None}
+    target_container_ref = container or container_id or container_name
+    svc_type = service_type or type
+
+    # Caso A: Healthcheck local del agente (sin parámetros de destino)
+    if not url and not target_container_ref:
+        return {"status": 200, "message": "OK"}
+
+    parsed_port = port
+    parsed_host = ""
+    is_direct_url = False
+
+    if url:
+        url_stripped = url.strip()
+        if "://" in url_stripped:
+            try:
+                parsed = urllib.parse.urlparse(url_stripped)
+                parsed_host = parsed.hostname or ""
+                if parsed.port:
+                    parsed_port = parsed.port
+                is_direct_url = True
+            except Exception:
+                is_direct_url = True
+        elif ":" in url_stripped and not url_stripped.startswith("/"):
+            parts = url_stripped.split(":", 1)
+            parsed_host = parts[0]
+            try:
+                parsed_port = int(parts[1].split("/")[0])
+            except ValueError:
+                pass
+            is_direct_url = True
+        else:
+            if not target_container_ref:
+                target_container_ref = url_stripped
+
+    # Buscar contenedor en Docker
+    container_obj = None
+    if target_container_ref:
+        container_obj = find_container(target_container_ref)
+    elif parsed_host and parsed_host not in ("localhost", "127.0.0.1", "0.0.0.0"):
+        container_obj = find_container(parsed_host)
+
+    # Determinar si es Base de datos / Servicio no HTTP (mysql, postgres, redis, mailer, workers)
+    is_non_http = is_non_http_service(
+        container=container_obj,
+        identifier=(target_container_ref or parsed_host or url or ""),
+        port=parsed_port,
+        service_type=svc_type
+    )
+
+    # 1. Bases de datos / Servicios no HTTP
+    if is_non_http:
+        if container_obj:
+            try:
+                container_obj.reload()
+                c_status = getattr(container_obj, "status", "").lower()
+                if c_status == "running":
+                    return {"status": 200, "message": "Container is Running"}
+                else:
+                    return {"status": 503, "message": "Connection refused / Timeout"}
+            except Exception as e:
+                logger.warning(f"Error consultando contenedor Docker: {e}")
+                return {"status": 503, "message": "Connection refused / Timeout"}
+
+        return {"status": 503, "message": "Connection refused / Timeout"}
+
+    # 2. Servicios Web (APIs / Apps Web)
+    # Si el contenedor existe en Docker y no está running, no intentar HTTP
+    if container_obj:
+        try:
+            container_obj.reload()
+            if getattr(container_obj, "status", "").lower() != "running":
+                return {"status": 503, "message": "Connection refused / Timeout"}
+        except Exception:
+            pass
+
+    # Resolver URL interna o localhost usando HTTP (puerto estándar interno, no HTTPS)
+    target_http_url = None
+    if is_direct_url and url:
+        target_http_url = url.strip()
+        if target_http_url.startswith("https://"):
+            target_http_url = "http://" + target_http_url[8:]
+        elif not target_http_url.startswith("http://"):
+            target_http_url = "http://" + target_http_url
+    elif container_obj:
+        target_http_url = get_container_web_target(container_obj, default_port=parsed_port)
+    elif target_container_ref:
+        p = parsed_port or 80
+        target_http_url = f"http://127.0.0.1:{p}"
+    else:
+        target_http_url = f"http://127.0.0.1:{parsed_port or 80}"
+
+    # Timeout de conexión: máximo 3 a 5 segundos (configurado en 4.0s)
+    http_timeout = httpx.Timeout(4.0, connect=3.5)
+
     try:
-        async with httpx.AsyncClient(verify=False) as client:
-            response = await client.get(url, timeout=5.0)
-            is_healthy = 200 <= response.status_code < 300
-            msg = "OK" if is_healthy else f"HTTP {response.status_code}"
-            return {
-                "healthy": is_healthy,
-                "status": response.status_code,
-                "message": msg,
-                "url": url
-            }
-    except httpx.TimeoutException:
-        return {
-            "healthy": False,
-            "status": 504,
-            "message": "Gateway Timeout (Tiempo de espera agotado)",
-            "url": url
-        }
-    except (httpx.ConnectError, httpx.NetworkError):
-        return {
-            "healthy": False,
-            "status": 503,
-            "message": "Contenedor inalcanzable (Conexión rechazada)",
-            "url": url
-        }
+        async with httpx.AsyncClient(verify=False, timeout=http_timeout) as client:
+            response = await client.get(target_http_url)
+            if 200 <= response.status_code < 400:
+                return {"status": 200, "message": "OK"}
+            else:
+                return {"status": 503, "message": "Connection refused / Timeout"}
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError, httpx.RequestError):
+        return {"status": 503, "message": "Connection refused / Timeout"}
     except Exception as e:
-        return {
-            "healthy": False,
-            "status": 500,
-            "message": f"Error inesperado: {str(e)}",
-            "url": url
-        }
+        logger.debug(f"Error durante comprobación HTTP: {e}")
+        return {"status": 503, "message": "Connection refused / Timeout"}
 
 @router.post("/diagnostics/exec", response_model=CommandResponse)
 def execute_command(request: CommandRequest):

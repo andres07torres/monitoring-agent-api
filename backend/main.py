@@ -81,6 +81,9 @@ dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".e
 ensure_api_secret_key(dotenv_path)
 load_dotenv(dotenv_path=dotenv_path, override=True)
 
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from api.routes import router as http_router
 from api.ws_routes import ws_router, api_ws_router
 

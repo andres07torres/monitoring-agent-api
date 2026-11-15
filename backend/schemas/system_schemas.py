@@ -14,9 +14,9 @@ class SystemStats(BaseModel):
     timestamp: Optional[str] = None
 
 class HealthCheckResponse(BaseModel):
-    healthy: bool
     status: int
     message: str
+    healthy: Optional[bool] = None
     url: Optional[str] = None
 
 class Alert(BaseModel):

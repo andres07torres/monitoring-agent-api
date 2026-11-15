@@ -252,3 +252,184 @@ def get_container_logs(container_id: str, tail: int = 100) -> List[str]:
     except Exception as e:
         logger.warning(f"Error al obtener registros de {container_id}: {e}")
         return [f"Error al obtener registros: {str(e)}"]
+
+# ==============================================================================
+# Comprobaciones y Detección de Salud de Contenedores (Healthcheck)
+# ==============================================================================
+
+NON_HTTP_KEYWORDS = [
+    "mysql", "mariadb",
+    "postgres", "postgresql", "pgsql",
+    "redis", "valkey", "memcached", "keydb",
+    "mongo", "mongodb",
+    "mailer", "mailhog", "mailpit", "postfix", "exim", "smtp",
+    "worker", "workers", "celery", "queue", "rabbitmq", "kafka", "zookeeper", "nats",
+    "cron", "scheduler", "beat"
+]
+
+NON_HTTP_PORTS = {
+    3306, 33060,  # MySQL / MariaDB
+    5432,         # PostgreSQL
+    6379,         # Redis
+    27017, 27018, # MongoDB
+    5672,         # RabbitMQ
+    9092,         # Kafka
+    11211,        # Memcached
+    25, 465, 587, # SMTP / Mailers
+}
+
+def find_container(identifier: str):
+    """
+    Busca un contenedor por ID (completo o corto) o por nombre.
+    """
+    if not identifier:
+        return None
+    client = get_docker_client()
+    if not client:
+        return None
+
+    cleaned_id = identifier.strip().strip("/")
+    try:
+        return client.containers.get(cleaned_id)
+    except Exception:
+        pass
+
+    try:
+        all_c = client.containers.list(all=True)
+        # Búsqueda exacta por nombre o IDs
+        for c in all_c:
+            c_name = getattr(c, "name", "").strip("/")
+            c_id = getattr(c, "id", "")
+            c_short_id = getattr(c, "short_id", "")
+            if cleaned_id in (c_name, c_id, c_short_id):
+                return c
+
+        # Búsqueda insensible a mayúsculas/minúsculas
+        lower_id = cleaned_id.lower()
+        for c in all_c:
+            c_name = getattr(c, "name", "").strip("/").lower()
+            if lower_id == c_name:
+                return c
+
+        for c in all_c:
+            c_name = getattr(c, "name", "").strip("/").lower()
+            if lower_id in c_name:
+                return c
+    except Exception as e:
+        logger.warning(f"Error buscando contenedor '{identifier}': {e}")
+
+    return None
+
+def is_non_http_service(
+    container=None,
+    identifier: str = "",
+    port: Optional[int] = None,
+    service_type: Optional[str] = None
+) -> bool:
+    """
+    Determina si un servicio/contenedor corresponde a una Base de Datos o servicio no HTTP
+    (mysql, postgres, redis, mailer, workers, etc.).
+    """
+    # 1. Indicador explícito por parámetro service_type / type
+    if service_type:
+        st = service_type.strip().lower()
+        if st in ["db", "database", "non-http", "non_http", "worker", "mailer", "queue", "redis", "postgres", "mysql", "nosql"]:
+            return True
+        if st in ["web", "http", "api", "app", "frontend", "backend"]:
+            return False
+
+    # 2. Puerto conocido de base de datos o servicio no HTTP
+    if port and int(port) in NON_HTTP_PORTS:
+        return True
+
+    # 3. Inspección de metadatos del contenedor Docker si está disponible
+    if container:
+        c_name = getattr(container, "name", "").lower()
+        c_image = _get_container_image_tag(container).lower()
+
+        # Comprobar palabras clave en nombre o imagen
+        for kw in NON_HTTP_KEYWORDS:
+            if kw in c_name or kw in c_image:
+                return True
+
+        # Comprobar puertos expuestos
+        exposed = container.attrs.get("Config", {}).get("ExposedPorts") or {}
+        ports_mapping = container.attrs.get("NetworkSettings", {}).get("Ports") or {}
+        all_port_keys = list(exposed.keys()) + list(ports_mapping.keys())
+        
+        has_non_http_port = False
+        has_http_port = False
+        for p_key in all_port_keys:
+            try:
+                p_num = int(p_key.split("/")[0])
+                if p_num in NON_HTTP_PORTS:
+                    has_non_http_port = True
+                elif p_num in (80, 443, 8080, 3000, 5000, 8000, 8081, 9000):
+                    has_http_port = True
+            except (ValueError, IndexError):
+                continue
+        
+        if has_non_http_port and not has_http_port:
+            return True
+
+    # 4. Palabras clave en el identificador o URL pasada
+    if identifier:
+        id_lower = identifier.lower()
+        for kw in NON_HTTP_KEYWORDS:
+            if kw in id_lower:
+                return True
+
+    return False
+
+def get_container_web_target(container, default_port: Optional[int] = None) -> str:
+    """
+    Obtiene la URL HTTP interna o en localhost para un contenedor web.
+    Prioriza consultar el puerto expuesto en localhost o el puerto estándar interno HTTP.
+    """
+    ports_mapping = container.attrs.get("NetworkSettings", {}).get("Ports") or {}
+    
+    # Priorizar mapeo a localhost
+    preferred_internal = [80, 8080, 3000, 5000, 8000, 443]
+    if default_port:
+        preferred_internal.insert(0, int(default_port))
+
+    for p_int in preferred_internal:
+        p_key = f"{p_int}/tcp"
+        if p_key in ports_mapping and ports_mapping[p_key]:
+            host_port = ports_mapping[p_key][0].get("HostPort")
+            if host_port:
+                return f"http://127.0.0.1:{host_port}"
+
+    for p_key, bindings in ports_mapping.items():
+        if bindings:
+            host_port = bindings[0].get("HostPort")
+            if host_port:
+                return f"http://127.0.0.1:{host_port}"
+
+    # Red interna Docker (IP interna del contenedor)
+    ip_addr = container.attrs.get("NetworkSettings", {}).get("IPAddress")
+    if not ip_addr:
+        networks = container.attrs.get("NetworkSettings", {}).get("Networks") or {}
+        for net_name, net_conf in networks.items():
+            if net_conf.get("IPAddress"):
+                ip_addr = net_conf["IPAddress"]
+                break
+
+    int_port = default_port or 80
+    exposed = container.attrs.get("Config", {}).get("ExposedPorts") or {}
+    if exposed:
+        for p_key in exposed.keys():
+            try:
+                int_port = int(p_key.split("/")[0])
+                break
+            except (ValueError, IndexError):
+                pass
+
+    if ip_addr:
+        return f"http://{ip_addr}:{int_port}"
+
+    c_name = getattr(container, "name", "").strip("/")
+    if c_name:
+        return f"http://{c_name}:{int_port}"
+
+    return f"http://127.0.0.1:{int_port}"
