@@ -264,7 +264,8 @@ NON_HTTP_KEYWORDS = [
     "mongo", "mongodb",
     "mailer", "mailhog", "mailpit", "postfix", "exim", "smtp",
     "worker", "workers", "celery", "queue", "rabbitmq", "kafka", "zookeeper", "nats",
-    "cron", "scheduler", "beat"
+    "cron", "scheduler", "beat",
+    "php", "fpm", "php-fpm"
 ]
 
 NON_HTTP_PORTS = {
@@ -381,30 +382,35 @@ def is_non_http_service(
 
     return False
 
-def get_container_web_target(container, default_port: Optional[int] = None) -> str:
+def get_container_web_targets(container, default_port: Optional[int] = None) -> List[str]:
     """
-    Obtiene la URL HTTP interna o en localhost para un contenedor web.
-    Prioriza consultar el puerto expuesto en localhost o el puerto estándar interno HTTP.
+    Obtiene las posibles URLs HTTP (en localhost, host gateway y red interna Docker) para un contenedor web.
     """
+    targets = []
     ports_mapping = container.attrs.get("NetworkSettings", {}).get("Ports") or {}
     
-    # Priorizar mapeo a localhost
     preferred_internal = [80, 8080, 3000, 5000, 8000, 443]
     if default_port:
         preferred_internal.insert(0, int(default_port))
 
+    host_ports = []
     for p_int in preferred_internal:
         p_key = f"{p_int}/tcp"
         if p_key in ports_mapping and ports_mapping[p_key]:
-            host_port = ports_mapping[p_key][0].get("HostPort")
-            if host_port:
-                return f"http://127.0.0.1:{host_port}"
+            hp = ports_mapping[p_key][0].get("HostPort")
+            if hp and hp not in host_ports:
+                host_ports.append(hp)
 
     for p_key, bindings in ports_mapping.items():
         if bindings:
-            host_port = bindings[0].get("HostPort")
-            if host_port:
-                return f"http://127.0.0.1:{host_port}"
+            hp = bindings[0].get("HostPort")
+            if hp and hp not in host_ports:
+                host_ports.append(hp)
+
+    for hp in host_ports:
+        targets.append(f"http://127.0.0.1:{hp}")
+        targets.append(f"http://172.17.0.1:{hp}")
+        targets.append(f"http://host.docker.internal:{hp}")
 
     # Red interna Docker (IP interna del contenedor)
     ip_addr = container.attrs.get("NetworkSettings", {}).get("IPAddress")
@@ -426,10 +432,17 @@ def get_container_web_target(container, default_port: Optional[int] = None) -> s
                 pass
 
     if ip_addr:
-        return f"http://{ip_addr}:{int_port}"
+        targets.append(f"http://{ip_addr}:{int_port}")
 
     c_name = getattr(container, "name", "").strip("/")
     if c_name:
-        return f"http://{c_name}:{int_port}"
+        targets.append(f"http://{c_name}:{int_port}")
 
-    return f"http://127.0.0.1:{int_port}"
+    if not targets:
+        targets.append(f"http://127.0.0.1:{int_port}")
+
+    return targets
+
+def get_container_web_target(container, default_port: Optional[int] = None) -> str:
+    targets = get_container_web_targets(container, default_port)
+    return targets[0] if targets else f"http://127.0.0.1:{default_port or 80}"

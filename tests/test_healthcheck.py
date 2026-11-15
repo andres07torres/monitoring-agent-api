@@ -164,6 +164,43 @@ class TestHealthCheckEndpoint(unittest.TestCase):
         self.assertEqual(data["message"], "Container is Running")
 
     @patch("api.routes.find_container")
+    def test_php_fpm_container_running(self, mock_find_container):
+        """symfony_php (contenedor php/fpm) corriendo debe responder 200 Container is Running."""
+        mock_container = MagicMock()
+        mock_container.name = "symfony_php"
+        mock_container.status = "running"
+        mock_container.attrs = {"Config": {"Image": "php:8.2-fpm"}}
+        mock_find_container.return_value = mock_container
+
+        response = self.client.get("/api/v1/healthcheck?container=symfony_php", headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], 200)
+        self.assertEqual(data["message"], "Container is Running")
+
+    @patch("httpx.AsyncClient.get")
+    @patch("api.routes.find_container")
+    def test_web_container_running_fallback(self, mock_find_container, mock_http_get):
+        """Contenedor web activo donde HTTP directo no conecta (ej. red bridge aislada) responde 200 Container is Running."""
+        import httpx
+        mock_http_get.side_effect = httpx.ConnectError("Connection refused")
+
+        mock_container = MagicMock()
+        mock_container.name = "sistema_tareas_app"
+        mock_container.status = "running"
+        mock_container.attrs = {
+            "Config": {"Image": "sistema-tareas:latest"},
+            "NetworkSettings": {"Ports": {"80/tcp": [{"HostPort": "8080"}]}}
+        }
+        mock_find_container.return_value = mock_container
+
+        response = self.client.get("/api/v1/healthcheck?container=sistema_tareas_app", headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], 200)
+        self.assertEqual(data["message"], "Container is Running")
+
+    @patch("api.routes.find_container")
     def test_explicit_service_type_db(self, mock_find_container):
         """Si service_type='db', trata el contenedor como base de datos aunque su nombre no lo indique."""
         mock_container = MagicMock()

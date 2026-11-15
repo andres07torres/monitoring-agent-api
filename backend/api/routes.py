@@ -30,7 +30,8 @@ from services.docker_service import (
     get_docker_client,
     find_container,
     is_non_http_service,
-    get_container_web_target
+    get_container_web_target,
+    get_container_web_targets
 )
 
 logger = logging.getLogger(__name__)
@@ -333,7 +334,7 @@ async def healthcheck(
         return {"status": 503, "message": "Connection refused / Timeout"}
 
     # 2. Servicios Web (APIs / Apps Web)
-    # Si el contenedor existe en Docker y no está running, no intentar HTTP
+    # Si el contenedor existe en Docker y no está running, responder 503
     if container_obj:
         try:
             container_obj.reload()
@@ -342,37 +343,50 @@ async def healthcheck(
         except Exception:
             pass
 
-    # Resolver URL interna o localhost usando HTTP (puerto estándar interno, no HTTPS)
-    target_http_url = None
+    # Resolver lista de URLs HTTP a probar
+    targets_to_try = []
     if is_direct_url and url:
-        target_http_url = url.strip()
-        if target_http_url.startswith("https://"):
-            target_http_url = "http://" + target_http_url[8:]
-        elif not target_http_url.startswith("http://"):
-            target_http_url = "http://" + target_http_url
+        raw_url = url.strip()
+        if raw_url.startswith("https://"):
+            raw_url = "http://" + raw_url[8:]
+        elif not raw_url.startswith("http://"):
+            raw_url = "http://" + raw_url
+        targets_to_try.append(raw_url)
     elif container_obj:
-        target_http_url = get_container_web_target(container_obj, default_port=parsed_port)
+        targets_to_try = get_container_web_targets(container_obj, default_port=parsed_port)
     elif target_container_ref:
         p = parsed_port or 80
-        target_http_url = f"http://127.0.0.1:{p}"
+        targets_to_try.append(f"http://127.0.0.1:{p}")
+        targets_to_try.append(f"http://172.17.0.1:{p}")
     else:
-        target_http_url = f"http://127.0.0.1:{parsed_port or 80}"
+        p = parsed_port or 80
+        targets_to_try.append(f"http://127.0.0.1:{p}")
 
-    # Timeout de conexión: máximo 3 a 5 segundos (configurado en 4.0s)
-    http_timeout = httpx.Timeout(4.0, connect=3.5)
+    # Timeout de conexión: máximo 3 a 5 segundos (configurado en 3.0s por intento)
+    http_timeout = httpx.Timeout(3.0, connect=2.0)
 
-    try:
-        async with httpx.AsyncClient(verify=False, timeout=http_timeout) as client:
-            response = await client.get(target_http_url)
-            if 200 <= response.status_code < 400:
-                return {"status": 200, "message": "OK"}
-            else:
-                return {"status": 503, "message": "Connection refused / Timeout"}
-    except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError, httpx.RequestError):
-        return {"status": 503, "message": "Connection refused / Timeout"}
-    except Exception as e:
-        logger.debug(f"Error durante comprobación HTTP: {e}")
-        return {"status": 503, "message": "Connection refused / Timeout"}
+    # Intentar conexión HTTP hacia los objetivos resueltos
+    for target_http_url in targets_to_try[:4]:
+        try:
+            async with httpx.AsyncClient(verify=False, timeout=http_timeout) as client:
+                response = await client.get(target_http_url)
+                # Si el servicio web responde (cualquier código indicativo de que el servidor web está activo)
+                if response.status_code < 500:
+                    return {"status": 200, "message": "OK"}
+        except Exception:
+            continue
+
+    # Si la petición HTTP directa no respondió (por aislamiento de red Docker o app interna),
+    # pero el contenedor existe y está en ejecución (running) en Docker, está activo:
+    if container_obj:
+        try:
+            container_obj.reload()
+            if getattr(container_obj, "status", "").lower() == "running":
+                return {"status": 200, "message": "Container is Running"}
+        except Exception:
+            pass
+
+    return {"status": 503, "message": "Connection refused / Timeout"}
 
 @router.post("/diagnostics/exec", response_model=CommandResponse)
 def execute_command(request: CommandRequest):
