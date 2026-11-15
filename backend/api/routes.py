@@ -245,17 +245,43 @@ def get_global_logs():
 @router.get("/healthcheck", response_model=HealthCheckResponse)
 async def healthcheck(url: Optional[str] = None):
     """
-    Verifica el estado del servicio o de un endpoint externo si se especifica ?url=...
+    Verifica el estado del servicio local o de un contenedor/endpoint externo si se especifica ?url=...
+    Retorna siempre HTTP 200 a nivel de API administrativa e informa el estado real en el payload JSON.
     """
     if not url:
-        return {"status": 200, "message": "OK"}
+        return {"healthy": True, "status": 200, "message": "OK", "url": None}
     try:
         async with httpx.AsyncClient(verify=False) as client:
             response = await client.get(url, timeout=5.0)
-            msg = "OK" if response.status_code == 200 else f"HTTP {response.status_code}"
-            return {"status": response.status_code, "message": msg}
+            is_healthy = 200 <= response.status_code < 300
+            msg = "OK" if is_healthy else f"HTTP {response.status_code}"
+            return {
+                "healthy": is_healthy,
+                "status": response.status_code,
+                "message": msg,
+                "url": url
+            }
+    except httpx.TimeoutException:
+        return {
+            "healthy": False,
+            "status": 504,
+            "message": "Gateway Timeout (Tiempo de espera agotado)",
+            "url": url
+        }
+    except (httpx.ConnectError, httpx.NetworkError):
+        return {
+            "healthy": False,
+            "status": 503,
+            "message": "Contenedor inalcanzable (Conexión rechazada)",
+            "url": url
+        }
     except Exception as e:
-        return {"status": 503, "message": f"Inalcanzable: {str(e)}"}
+        return {
+            "healthy": False,
+            "status": 500,
+            "message": f"Error inesperado: {str(e)}",
+            "url": url
+        }
 
 @router.post("/diagnostics/exec", response_model=CommandResponse)
 def execute_command(request: CommandRequest):
