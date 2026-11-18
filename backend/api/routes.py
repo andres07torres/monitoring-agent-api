@@ -13,7 +13,7 @@ from schemas.docker_schemas import (
     ContainerBase, ContainerInfo, ContainerActionResponse, PruneResponse, LogsResponse
 )
 from services.system_service import (
-    get_system_stats, trigger_shutdown, trigger_reboot, get_system_alerts, get_system_logs, add_system_log
+    get_system_stats, get_system_metadata, trigger_shutdown, trigger_reboot, get_system_alerts, get_system_logs, add_system_log
 )
 from services.docker_service import (
     list_containers, 
@@ -86,12 +86,22 @@ router = APIRouter(prefix="/api/v1", dependencies=[Depends(verify_api_key)], tag
 
 @router.get("/system/stats", response_model=SystemStats)
 def system_stats():
-    """Retorna telemetría del servidor en tiempo real (CPU, RAM, Disco)."""
+    """Retorna telemetría del servidor en tiempo real (CPU, RAM, Disco y metadatos del sistema)."""
     try:
         return get_system_stats()
     except Exception as e:
         logger.error(f"Error inesperado al calcular estadísticas del sistema: {e}")
         # En caso de cualquier imprevisto, retorna métricas por defecto seguras
+        try:
+            metadata = get_system_metadata()
+        except Exception:
+            metadata = {
+                "os": "Desconocido",
+                "architecture": "unknown",
+                "uptime": "0 min",
+                "protected_ports": "",
+                "zero_trust_tunnel": "Ninguno",
+            }
         return {
             "cpu_percent": 0.0,
             "cpu_cores": 1,
@@ -101,7 +111,8 @@ def system_stats():
             "ram_total_gb": 0.0,
             "disk_percent": 0.0,
             "disk_used_gb": 0.0,
-            "disk_total_gb": 0.0
+            "disk_total_gb": 0.0,
+            **metadata
         }
 
 @router.post("/system/reboot", response_model=PowerActionResponse)

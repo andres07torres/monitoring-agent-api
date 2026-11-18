@@ -9,7 +9,7 @@ Backend robusto (Agente Orquestador) diseñado para monitorear servidores Ubuntu
 
 ## 🚀 Características Principales
 
-- **Monitoreo en Tiempo Real**: Telemetría exacta del host leyendo el uso de CPU (núcleos y GHz), RAM y almacenamiento vía `psutil`.
+- **Monitoreo en Tiempo Real**: Telemetría exacta del host leyendo el uso de CPU (núcleos y GHz), RAM y almacenamiento vía `psutil`, junto con metadatos dinámicos del servidor (SO, arquitectura, uptime, puertos protegidos y túnel Zero Trust).
 - **Gestión de Energía del Host**: Reinicio (`/api/v1/system/reboot`) y apagado seguro (`/api/v1/system/shutdown`) diferidos para permitir el cierre limpio de sockets y servicios.
 - **Orquestación de Docker**: Control total de contenedores locales.
   - Iniciar, detener, pausar, reiniciar y eliminar contenedores.
@@ -51,6 +51,39 @@ El proyecto utiliza variables de entorno para máxima seguridad. Para configurar
 1. Crea o renombra el archivo `.env.example` a `.env`.
 2. Si dejas el campo `API_SECRET_KEY=""` vacío, el sistema generará una contraseña criptográficamente segura y la guardará automáticamente dentro de las comillas en el archivo `.env` al arrancar el agente (ya sea con `docker compose up`, `bash run.sh` o `bash install.sh`).
 3. Copia esa clave generada e ingrésala en la aplicación móvil para autorizar el acceso.
+
+## 📊 Telemetría del Sistema (`GET /api/v1/system/stats`)
+
+El endpoint devuelve métricas del host y cinco campos adicionales calculados en tiempo de ejecución (no están hardcodeados):
+
+```json
+{
+  "cpu_percent": 45.2,
+  "cpu_cores": 4,
+  "cpu_frequency": 2400.0,
+  "ram_percent": 60.1,
+  "ram_used_gb": 4.5,
+  "ram_total_gb": 8.0,
+  "disk_percent": 30.5,
+  "disk_used_gb": 150.0,
+  "disk_total_gb": 500.0,
+  "os": "Ubuntu 22.04.3 LTS (Docker Engine)",
+  "architecture": "x86_64",
+  "uptime": "12 días, 4 horas, 22 min",
+  "protected_ports": "443 (HTTPS), 8443 (WSS)",
+  "zero_trust_tunnel": "Cloudflare Tunnel (HTTPS/WSS)"
+}
+```
+
+| Campo | Origen dinámico |
+| --- | --- |
+| `os` | `/host/etc/os-release` (host) o `/etc/os-release`, con marca `(Docker Engine)` al correr en contenedor. |
+| `architecture` | `platform.machine()` normalizado (`x86_64`, `arm64`, etc.). |
+| `uptime` | `psutil.boot_time()` del host (vía `HOST_PROC=/host/proc`). |
+| `protected_ports` | Puertos publicados por Docker, puertos en escucha relevantes y el puerto del agente. |
+| `zero_trust_tunnel` | Procesos activos (`cloudflared`, `tailscaled`, `ngrok`, `zerotier-one`, `frpc`) y archivos de configuración. |
+
+Si necesitas forzar algún valor, define `SYSTEM_OS`, `HOST_ARCH`, `PROTECTED_PORTS` (ej. `"443:HTTPS,8443:WSS"`) o `ZERO_TRUST_TUNNEL` en el `.env`. También se expone por WebSocket en `wss://<HOST>/ws/v1/system/stream`.
 
 ---
 Desarrollado con ❤️ para llevar el control de la infraestructura a tu bolsillo.

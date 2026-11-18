@@ -11,6 +11,12 @@ class SystemStats(BaseModel):
     disk_percent: float
     disk_used_gb: float
     disk_total_gb: float
+    # Detalles dinámicos del sistema y de la configuración del servidor
+    os: str
+    architecture: str
+    uptime: str
+    protected_ports: str
+    zero_trust_tunnel: str
     timestamp: Optional[str] = None
 
 class HealthCheckResponse(BaseModel):
